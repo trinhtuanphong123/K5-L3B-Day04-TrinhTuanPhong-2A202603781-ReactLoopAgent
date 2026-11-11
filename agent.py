@@ -27,6 +27,20 @@ def _execute_tool(tools, name, args):
         return {'ok': False, 'error': type(exc).__name__, 'message': str(exc)[:200]}
 
 
+def _valid_calls(calls):
+    """List call hợp lệ: mỗi call là dict có id/name là chuỗi không rỗng.
+
+    Reply sai contract (calls là dict, call không phải dict, thiếu id/name) không
+    được đưa vào history vì sẽ làm provider call kế tiếp lỗi hoặc crash loop.
+    """
+    return isinstance(calls, list) and all(
+        isinstance(call, dict)
+        and isinstance(call.get('id'), str) and call['id']
+        and isinstance(call.get('name'), str) and call['name']
+        for call in calls
+    )
+
+
 def run_agent(question, provider, tools, max_steps=6):
     """Trả dict: status, answer, trace, usage. Contract chi tiết trong GUIDE.md."""
     messages = [
@@ -57,6 +71,11 @@ def run_agent(question, provider, tools, max_steps=6):
         if finish == 'length':
             trace.append({'event': 'error', 'step': step, 'message': 'Model output bị cắt (finish=length).'})
             return {'status': 'error', 'answer': answer, 'trace': trace, 'usage': usage, 'error': 'MODEL_OUTPUT_TRUNCATED'}
+
+        if not _valid_calls(calls):
+            trace.append({'event': 'error', 'step': step,
+                          'message': 'Provider trả calls không hợp lệ (cần list call có id/name).'})
+            return {'status': 'error', 'answer': answer, 'trace': trace, 'usage': usage, 'error': 'MALFORMED_PROVIDER_REPLY'}
 
         if not calls:
             if finish == 'stop':

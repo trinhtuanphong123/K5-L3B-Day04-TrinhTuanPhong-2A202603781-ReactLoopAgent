@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 eval_results*.json
+
+# Test hồi quy cục bộ, không nộp
+local_checks/
