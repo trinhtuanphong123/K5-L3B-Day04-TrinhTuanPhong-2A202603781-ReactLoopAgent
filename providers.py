@@ -12,6 +12,21 @@ CONFIG = {
 }
 
 
+def openrouter_preferences(value):
+    """'wafer/mxfp4' -> {'only': ['wafer'], 'quantizations': ['mxfp4']}; rỗng -> None."""
+    value = (value or '').strip()
+    if not value:
+        return None
+    provider, _, quantization = value.partition('/')
+    provider, quantization = provider.strip(), quantization.strip()
+    if not provider:
+        raise ValueError('OPENROUTER_PROVIDER phải có dạng provider hoặc provider/quantization, ví dụ wafer/mxfp4.')
+    preferences = {'only': [provider]}
+    if quantization:
+        preferences['quantizations'] = [quantization]
+    return preferences
+
+
 def post_json(url, headers, payload):
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', **headers})
     try:
@@ -36,6 +51,7 @@ class Provider:
         if not model:
             raise ValueError('Cần đặt MODEL là model có hỗ trợ tool calling.')
         self.name, self.model = name, model
+        self.provider_preferences = openrouter_preferences(os.getenv('OPENROUTER_PROVIDER')) if name == 'openrouter' else None
         key_name, self.url = CONFIG[name]
         self.key = os.getenv(key_name)
         if not self.key:
@@ -47,6 +63,8 @@ class Provider:
         payload = {'model': self.model, 'messages': messages}
         if schemas:
             payload['tools'] = schemas
+        if self.provider_preferences:
+            payload['provider'] = self.provider_preferences
         data = post_json(self.url, {'Authorization': f'Bearer {self.key}'}, payload)
         choice = data['choices'][0]
         message = choice['message']
