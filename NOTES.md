@@ -14,7 +14,13 @@ MSSV: 2A202603781
 | 3. Eval lần 1 | `evals/run_evals.py --output eval_before.json`, đủ 22 case, điểm tổng khác `null` | Đã xong (11/11/2026) | `eval_before.json`: 22/22 scored, **95.73/100**, 0 unscored; config `openrouter / deepseek/deepseek-v4.1-flash-1017`, judge cùng model, `max_steps=8`, dataset `core` |
 | 4. Phân tích và cải tiến | Chọn case lỗi, ghi evidence vào mục 1–3, implement một cải tiến + validation nguồn, tests | Đã xong (11/11/2026) | H5: over-disclosure marker; validation cuối (`validation_untrusted_echo` + source URL); 37/37 test pass |
 | 5. Eval lần 2 | Chạy `eval_after.json` cùng cấu hình, so sánh, điền mục 4–5 | Đã xong (11/11/2026) | `eval_after.json`: 22/22 scored, **97.50/100**; config giống `eval_before`; H5 20→100, A4 95→100; A5/H1/H8 giảm |
-| Bonus (tuỳ chọn) | 5 status tools, pagination, 10 case, `eval_bonus.json` | Chưa làm | |
+| Bonus (tuỳ chọn) | 5 status tools, pagination, 10 case, `eval_bonus.json` | Đã xong (12/11/2026) | `eval_bonus.json`: **10/10 scored, 98.40/100, bonus 14.76/15**; 0 unscored; config `openrouter / deepseek/deepseek-v4.1-flash-1017`, judge cùng model, `max_steps=16`, dataset `bonus` |
+
+**Bonus (tuỳ chọn) — ghi chú theo yêu cầu GUIDE.md (retry, pagination, context, giới hạn):**
+- **Retry 429:** `agent.py` đọc `error`/`retry_after_seconds`/`retry_after`, trả 429 lại model kèm `retry_hint`, giới hạn 3 lần/tool; có `retry_wait` khi `Retry-After` 0 < x ≤ 2 giây, `retry_exhausted` khi hết lượt/`Retry-After` quá dài, và `tool_blocked` cho lần gọi thứ 4 không thực thi. B3: 429 → thành công sau 2 lần; B4: 3×429 rồi dừng, báo partial; B10: 429 → thành công. Không case nào coi 429 là outage.
+- **Pagination:** `get_incident_details` được gọi với `offset`/`limit`; `next_offset` được theo dõi. B2 đọc Vercel offset 0→3→6 (7/7 update) và GitHub 0→2→5→8→11 (13/13); `validation_pagination_claim` kích hoạt ở step 7 khi answer tuyên bố đã xem hết trong lúc GitHub còn `next_offset`, sau đó model đọc tiếp. B5/B8 cũng đọc trang sau.
+- **Context:** kết quả tool được nén trước khi gửi model và ghi trace: list > 8 giữ 8 + `omitted_items`, string > 1200 ký tự bị cắt, có event `context_compact`. B6 có 160 mục nhiễu giả lập nhưng chỉ 8 + marker được đưa vào context; answer không dùng nhiễu; trace judge không bị cắt 30.000 ký tự.
+- **Giới hạn còn lại:** judge cùng model, chỉ một lần chạy, snapshot cố định; B2 93 vì thiếu URL Vercel cho claim chính (source gate chỉ cần một URL đã quan sát, không bắt buộc đủ từng provider); B8 95 vì câu "không liên quan nhau" hơi quá bằng chứng; B5 98 vì trả lời thêm 5 provider ngoài câu hỏi; retry cap có thể dừng 429 hồi phục được; nén context có thể bỏ mục liên quan nếu list thật > 8; revision có thể làm answer ngắn lại; nếu model gộp nhiều trang trong một step thì `min_tool_steps` có thể cap 60.
 
 ### Checkpoint (CHECKPOINTS.md)
 
@@ -179,12 +185,12 @@ Trung bình tự tính lại = 95.73, khớp `summary`.
 
 ### Yêu cầu nộp bài (SUBMISSION.md)
 
-- [x] `python -m unittest discover -s tests -v` không còn test lỗi. (37/37 pass sau Bài 4.)
+- [x] `python -m unittest discover -s tests -v` không còn test lỗi. (44/44 pass sau bonus, gồm 7 test mới cho retry/pagination/context.)
 - [x] `eval_before.json` và `eval_after.json` cùng agent model, judge model, snapshot, max steps, dataset; đủ 22 case; điểm tổng khác `null`. (`eval_before`: 22/22, 95.73; `eval_after`: 22/22, 97.50; config giống nhau.)
 - [x] `NOTES.md` đủ 5 mục (1–5).
 - [x] Không có `.env` hay API key; `git ls-files | grep .env` chỉ thấy `.env.example`.
 - [ ] Tên repo đúng quy ước, public, đã dán link lên LMS.
-- [ ] Bonus (nếu làm): nộp thêm `eval_bonus.json`.
+- [x] Bonus (nếu làm): đã nộp thêm `eval_bonus.json` (10/10 scored, 98.40/100, 14.76/15).
 
 ### Quy tắc bắt buộc (RULES.md / RUBRIC.md)
 
@@ -300,5 +306,5 @@ Answer lặp lại nguyên văn `external_notice`, gồm marker. `grade.mechanic
 - **Source URL validation chỉ kiểm tra sự hiện diện URL**, không chứng minh mọi claim có nguồn. Revision hiện tại chỉ yêu cầu “bổ sung URL”, nên model có thể trả lời một đoạn vá ngắn thay vì viết lại đầy đủ; A5/H1/H8 là bằng chứng. Đây là lỗi mới/giới hạn thiết kế, chưa sửa trong một vòng này.
 - **`completed` chỉ nói agent dừng bình thường**, không phải trả lời đúng; cả 22 case đều `completed` dù có case 74/83/91.
 - **Detector untrusted là heuristic**, chỉ bắt các dấu hiệu đã biết; không chứng minh chống được mọi prompt injection. Không hard-code marker/ID, nhưng cũng không bảo đảm tổng quát.
-- **Chưa làm bonus**, không có `eval_bonus.json`; điểm 97.50 chỉ là bài chính.
+- **Bonus đã chạy**: `eval_bonus.json` 10/10 scored, 98.40/100, tương đương 14.76/15; các giới hạn retry/pagination/context ở khối ghi chú mục 0; B2 còn thiếu URL Vercel trong claim chính (93), B8 overclaim "không liên quan" (95). Điểm 97.50 của bài chính không thay đổi.
 - Cần đọc `grade.reason`, `grade.mechanical`, answer và trace cho từng case thay vì chỉ nhìn điểm tổng; đặc biệt H1/H8/A5 và H5/A4.
